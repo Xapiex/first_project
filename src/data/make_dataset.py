@@ -1,30 +1,29 @@
-# -*- coding: utf-8 -*-
-import click
-import logging
-from pathlib import Path
-from dotenv import find_dotenv, load_dotenv
+# src/data/make_dataset.py
+import pathlib
+from fastai.vision.data import untar_data
 
-
-@click.command()
-@click.argument('input_filepath', type=click.Path(exists=True))
-@click.argument('output_filepath', type=click.Path())
-def main(input_filepath, output_filepath):
-    """ Runs data processing scripts to turn raw data from (../raw) into
-        cleaned data ready to be analyzed (saved in ../processed).
+def download_data():
     """
-    logger = logging.getLogger(__name__)
-    logger.info('making final data set from raw data')
+    Descarga el dataset de Oxford-IIIT Pets y lo guarda en la carpeta data/raw/
+    en la raíz del proyecto.
+    """
+    # Calculamos la raíz del proyecto dinámicamente:
+    # Este archivo está en src/data/, así que subimos 3 niveles: make_dataset.py -> data -> src -> Raíz
+    BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
+    DATA_DIR = BASE_DIR / "data" / "raw"
+    
+    # Creamos el directorio si no existe
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    
+    DATASET_URL = 'https://s3.amazonaws.com/fast-ai-imageclas/oxford-iiit-pet.tgz'
+    
+    print(f"Verificando/Descargando dataset en: {DATA_DIR}...")
+    
+    # untar_data descarga y descomprime. Redirigimos el destino a nuestra carpeta local.
+    path = untar_data(DATASET_URL, dest=DATA_DIR)
+    
+    print(f"¡Dataset listo y ubicado en: {path}!")
+    return path
 
-
-if __name__ == '__main__':
-    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_fmt)
-
-    # not used in this stub but often useful for finding various files
-    project_dir = Path(__file__).resolve().parents[2]
-
-    # find .env automagically by walking up directories until it's found, then
-    # load up the .env entries as environment variables
-    load_dotenv(find_dotenv())
-
-    main()
+if __name__ == "__main__":
+    download_data()
