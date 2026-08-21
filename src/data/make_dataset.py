@@ -1,29 +1,74 @@
 # src/data/make_dataset.py
+
 import pathlib
-from fastai.vision.data import untar_data
+
+from fastai.vision.all import untar_data, URLs
+
 
 def download_data():
     """
-    Descarga el dataset de Oxford-IIIT Pets y lo guarda en la carpeta data/raw/
-    en la raíz del proyecto.
+    Descarga el dataset Oxford-IIIT Pets.
+
+    El archivo comprimido se guarda en:
+        data/archive/
+
+    El dataset descomprimido se guarda en:
+        data/raw/
     """
-    # Calculamos la raíz del proyecto dinámicamente:
-    # Este archivo está en src/data/, así que subimos 3 niveles: make_dataset.py -> data -> src -> Raíz
+
+    # ========================================================
+    # RUTA RAÍZ DEL PROYECTO
+    # ========================================================
+
     BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
+
+    # Carpeta donde quedará el dataset descomprimido
     DATA_DIR = BASE_DIR / "data" / "raw"
-    
-    # Creamos el directorio si no existe
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    
-    DATASET_URL = 'https://s3.amazonaws.com/fast-ai-imageclas/oxford-iiit-pet.tgz'
-    
-    print(f"Verificando/Descargando dataset en: {DATA_DIR}...")
-    
-    # untar_data descarga y descomprime. Redirigimos el destino a nuestra carpeta local.
-    path = untar_data(DATASET_URL, dest=DATA_DIR)
-    
-    print(f"¡Dataset listo y ubicado en: {path}!")
+
+    # Carpeta donde quedará el archivo .tgz descargado
+    ARCHIVE_DIR = BASE_DIR / "data" / "archive"
+
+    # Crear carpetas si todavía no existen
+    DATA_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    ARCHIVE_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    print("====================================")
+    print("DESCARGA DEL DATASET")
+    print("====================================")
+
+    print(f"Dataset: {DATA_DIR}")
+    print(f"Archivo comprimido: {ARCHIVE_DIR}")
+
+    # ========================================================
+    # DESCARGAR Y DESCOMPRIMIR
+    # ========================================================
+
+    path = untar_data(
+        URLs.PETS,
+        archive=ARCHIVE_DIR,
+        data=DATA_DIR
+    )
+
+    print("\n====================================")
+    print("DATASET LISTO")
+    print("====================================")
+
+    print(f"Ruta final: {path}")
+
     return path
 
+
+# ============================================================
+# EJECUCIÓN DIRECTA
+# ============================================================
+
 if __name__ == "__main__":
+
     download_data()
