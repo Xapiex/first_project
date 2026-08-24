@@ -87,3 +87,17 @@ target/
 
 # Mypy cache
 .mypy_cache/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# MLflow local files
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Modelos entrenados
+models/*.pkl
+*.pkl
