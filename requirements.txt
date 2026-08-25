@@ -24,6 +24,12 @@ matplotlib
 Pillow
 
 # =========================
+# FastAPI
+# =========================
+fastapi==0.141.1
+uvicorn==0.52.4
+
+# =========================
 # Project configuration
 # =========================
 python-dotenv>=0.5.1
