@@ -1,64 +1,200 @@
-# src/models/predict_model.py
+import os
 import pathlib
-from fastai.vision.all import *
+import time
 
-# ¡CRÍTICO! FastAI necesita que 'is_cat' esté en el entorno 
-# para poder cargar correctamente el archivo .pkl
-from src.features.build_features import is_cat 
+from fastai.vision.all import load_learner
 
-def predict(image_path):
+# FastAI necesita esta función para reconstruir
+# correctamente los modelos exportados.
+from src.features.build_features import is_cat
+
+
+# ============================================================
+# COMPATIBILIDAD WINDOWS -> DOCKER / LINUX
+# ============================================================
+
+if os.name != "nt":
+    pathlib.WindowsPath = pathlib.PosixPath
+
+
+# ============================================================
+# RUTAS
+# ============================================================
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
+MODELS_DIR = BASE_DIR / "models"
+
+
+# ============================================================
+# CONFIGURACIÓN DE MODELOS
+# ============================================================
+
+MODEL_CONFIG = {
+    "resnet34": {
+        "file": "clasificador.pkl",
+        "architecture": "ResNet34",
+        "validation_accuracy": 99.59,
+        "validation_error_rate": 0.41,
+        "correct_predictions": 1472,
+        "validation_samples": 1478,
+    },
+    "efficientnet_b0": {
+        "file": "clasificador_efficientnet_b0_e1_img224_bs64.pkl",
+        "architecture": "EfficientNet-B0",
+        "validation_accuracy": 97.77,
+        "validation_error_rate": 2.23,
+        "correct_predictions": 1445,
+        "validation_samples": 1478,
+    },
+}
+
+
+# Modelos cargados en memoria
+_LOADED_MODELS = {}
+
+
+# ============================================================
+# ESTADO DE LOS MODELOS
+# ============================================================
+
+def get_models_status():
     """
-    Carga el modelo preentrenado y realiza una predicción sobre una nueva imagen.
+    Devuelve información técnica de los modelos disponibles.
     """
-    # Resolviendo rutas dinámicamente
-    BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
-    MODELS_DIR = BASE_DIR / "models"
-    model_path = MODELS_DIR / "clasificador.pkl"
-    
+
+    status = {}
+
+    for model_name, config in MODEL_CONFIG.items():
+
+        model_path = MODELS_DIR / config["file"]
+
+        status[model_name] = {
+            "architecture": config["architecture"],
+            "file": config["file"],
+            "exists": model_path.exists(),
+            "loaded": model_name in _LOADED_MODELS,
+            "validation_accuracy": config["validation_accuracy"],
+            "validation_error_rate": config["validation_error_rate"],
+            "correct_predictions": config["correct_predictions"],
+            "validation_samples": config["validation_samples"],
+        }
+
+    return status
+
+
+# ============================================================
+# CARGAR MODELO
+# ============================================================
+
+def get_model(model_name="resnet34"):
+    """
+    Carga un modelo una sola vez.
+    Después permanece almacenado en memoria.
+    """
+
+    if model_name not in MODEL_CONFIG:
+        raise ValueError(
+            f"Modelo no válido: {model_name}. "
+            f"Disponibles: {list(MODEL_CONFIG.keys())}"
+        )
+
+    if model_name in _LOADED_MODELS:
+        return _LOADED_MODELS[model_name]
+
+    config = MODEL_CONFIG[model_name]
+
+    model_path = MODELS_DIR / config["file"]
+
     if not model_path.exists():
-        print(f"Error: No se encontró el modelo en {model_path}.")
-        print("Asegúrate de haber ejecutado src/models/train_model.py primero.")
-        return
-        
-    print(f"Cargando modelo empaquetado desde {model_path}...")
-    learn = load_learner(model_path)
-    
-    print(f"Analizando la imagen: {image_path}...")
-    # learn.predict devuelve la clase predicha, el índice y un tensor con las probabilidades
-    pred_class, pred_idx, probabilities = learn.predict(image_path)
-    
-    # Extraemos la probabilidad de la clase ganadora y la convertimos a porcentaje
-    probabilidad = probabilities[pred_idx].item() * 100
+        raise FileNotFoundError(
+            f"No se encontró el modelo: {model_path}"
+        )
 
-    # El modelo etiqueta a los gatos con True y a los perros con False.
-    # Algunos entornos devuelven el valor como bool, otros como string.
+    print(
+        f"Cargando {config['architecture']} "
+        f"desde {model_path}..."
+    )
+
+    learner = load_learner(
+        model_path,
+        cpu=True
+    )
+
+    _LOADED_MODELS[model_name] = learner
+
+    print(
+        f"{config['architecture']} "
+        f"cargado correctamente."
+    )
+
+    return learner
+
+
+# ============================================================
+# PREDICCIÓN
+# ============================================================
+
+def predict(image_path, model_name="resnet34"):
+    """
+    Ejecuta una predicción sobre una imagen.
+    """
+
+    learner = get_model(model_name)
+
+    config = MODEL_CONFIG[model_name]
+
+    start_time = time.perf_counter()
+
+    pred_class, pred_idx, probabilities = learner.predict(
+        image_path
+    )
+
+    inference_time_ms = (
+        time.perf_counter() - start_time
+    ) * 1000
+
+    dog_probability = float(
+        probabilities[0].item()
+    ) * 100
+
+    cat_probability = float(
+        probabilities[1].item()
+    ) * 100
+
     pred_value = pred_class
+
     if isinstance(pred_value, str):
-        pred_value = pred_value.strip().lower() == "true"
+        pred_value = (
+            pred_value.strip().lower() == "true"
+        )
 
-    resultado_legible = "GATO" if bool(pred_value) else "PERRO"
+    prediction = (
+        "GATO"
+        if bool(pred_value)
+        else "PERRO"
+    )
 
-    print("\n" + "="*40)
-    print("         RESULTADO DE LA PREDICCIÓN")
-    print("="*40)
-    print(f"  Predicción final : ¡Es un {resultado_legible}!")
-    print(f"  Nivel de certeza : {probabilidad:.2f}%")
-    print("="*40 + "\n")
+    confidence = float(
+        probabilities[int(pred_idx)].item()
+    ) * 100
 
-    return resultado_legible, probabilidad
-
-if __name__ == "__main__":
-    # Bloque de prueba
-    BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
-    
-    # Busca una imagen llamada 'prueba.jpg' en la raíz del proyecto
-    ruta_prueba = BASE_DIR / "prueba.jpg"
-    
-    if ruta_prueba.exists():
-        predict(ruta_prueba)
-    else:
-        print(f"\n[Aviso] Para probar el script, necesitas una imagen.")
-        print(f"1. Descarga una foto de un perro o gato.")
-        print(f"2. Guárdala como 'prueba.jpg' en la carpeta raíz:")
-        print(f"   {BASE_DIR}")
-        print(f"3. Vuelve a ejecutar este script.")
+    return {
+        "model": model_name,
+        "architecture": config["architecture"],
+        "prediction": prediction,
+        "confidence": round(confidence, 2),
+        "probabilities": {
+            "PERRO": round(dog_probability, 2),
+            "GATO": round(cat_probability, 2),
+        },
+        "inference_time_ms": round(
+            inference_time_ms,
+            2
+        ),
+        "validation_accuracy": config[
+            "validation_accuracy"
+        ],
+        "validation_error_rate": config[
+            "validation_error_rate"
+        ],
+    }
