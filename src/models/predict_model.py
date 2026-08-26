@@ -29,17 +29,22 @@ def predict(image_path):
     
     # Extraemos la probabilidad de la clase ganadora y la convertimos a porcentaje
     probabilidad = probabilities[pred_idx].item() * 100
-    
-    # Dado que is_cat devuelve True para Gatos y False para Perros:
-    resultado_legible = "GATO" if pred_class == 'True' else "PERRO"
-    
+
+    # El modelo etiqueta a los gatos con True y a los perros con False.
+    # Algunos entornos devuelven el valor como bool, otros como string.
+    pred_value = pred_class
+    if isinstance(pred_value, str):
+        pred_value = pred_value.strip().lower() == "true"
+
+    resultado_legible = "GATO" if bool(pred_value) else "PERRO"
+
     print("\n" + "="*40)
     print("         RESULTADO DE LA PREDICCIÓN")
     print("="*40)
     print(f"  Predicción final : ¡Es un {resultado_legible}!")
     print(f"  Nivel de certeza : {probabilidad:.2f}%")
     print("="*40 + "\n")
-    
+
     return resultado_legible, probabilidad
 
 if __name__ == "__main__":
