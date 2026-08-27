@@ -1,56 +1,32 @@
-import os
-import pathlib
-import time
-
-from fastai.vision.all import load_learner
-
-# FastAI necesita esta función para reconstruir
-# correctamente los modelos exportados.
-from src.features.build_features import is_cat
+from src.models.model_manager import ModelManager
 
 
 # ============================================================
-# COMPATIBILIDAD WINDOWS -> DOCKER / LINUX
+# ADMINISTRADOR POO
 # ============================================================
 
-if os.name != "nt":
-    pathlib.WindowsPath = pathlib.PosixPath
-
-
-# ============================================================
-# RUTAS
-# ============================================================
-
-BASE_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
-MODELS_DIR = BASE_DIR / "models"
+# Se crea una sola instancia para toda la aplicación.
+# Esta instancia administra ResNet34 y EfficientNet-B0.
+_MODEL_MANAGER = ModelManager()
 
 
 # ============================================================
-# CONFIGURACIÓN DE MODELOS
+# CONFIGURACIÓN COMPATIBLE CON FASTAPI
 # ============================================================
 
+# Conservamos MODEL_CONFIG porque FastAPI ya lo utiliza.
+# Los datos ahora se obtienen de los objetos ImageClassifier.
 MODEL_CONFIG = {
-    "resnet34": {
-        "file": "clasificador.pkl",
-        "architecture": "ResNet34",
-        "validation_accuracy": 99.59,
-        "validation_error_rate": 0.41,
-        "correct_predictions": 1472,
-        "validation_samples": 1478,
-    },
-    "efficientnet_b0": {
-        "file": "clasificador_efficientnet_b0_e1_img224_bs64.pkl",
-        "architecture": "EfficientNet-B0",
-        "validation_accuracy": 97.77,
-        "validation_error_rate": 2.23,
-        "correct_predictions": 1445,
-        "validation_samples": 1478,
-    },
+    model_name: {
+        "file": classifier.model_file,
+        "architecture": classifier.architecture,
+        "validation_accuracy": classifier.validation_accuracy,
+        "validation_error_rate": classifier.validation_error_rate,
+        "correct_predictions": classifier.correct_predictions,
+        "validation_samples": classifier.validation_samples,
+    }
+    for model_name, classifier in _MODEL_MANAGER.models.items()
 }
-
-
-# Modelos cargados en memoria
-_LOADED_MODELS = {}
 
 
 # ============================================================
@@ -60,26 +36,12 @@ _LOADED_MODELS = {}
 def get_models_status():
     """
     Devuelve información técnica de los modelos disponibles.
+
+    Se conserva esta función para mantener compatibilidad
+    con FastAPI, pero internamente utiliza ModelManager.
     """
 
-    status = {}
-
-    for model_name, config in MODEL_CONFIG.items():
-
-        model_path = MODELS_DIR / config["file"]
-
-        status[model_name] = {
-            "architecture": config["architecture"],
-            "file": config["file"],
-            "exists": model_path.exists(),
-            "loaded": model_name in _LOADED_MODELS,
-            "validation_accuracy": config["validation_accuracy"],
-            "validation_error_rate": config["validation_error_rate"],
-            "correct_predictions": config["correct_predictions"],
-            "validation_samples": config["validation_samples"],
-        }
-
-    return status
+    return _MODEL_MANAGER.get_models_status()
 
 
 # ============================================================
@@ -88,46 +50,15 @@ def get_models_status():
 
 def get_model(model_name="resnet34"):
     """
-    Carga un modelo una sola vez.
-    Después permanece almacenado en memoria.
+    Devuelve el Learner de FastAI correspondiente.
+
+    Se conserva esta función para compatibilidad con
+    cualquier código existente que espere el modelo cargado.
     """
 
-    if model_name not in MODEL_CONFIG:
-        raise ValueError(
-            f"Modelo no válido: {model_name}. "
-            f"Disponibles: {list(MODEL_CONFIG.keys())}"
-        )
+    classifier = _MODEL_MANAGER.get_model(model_name)
 
-    if model_name in _LOADED_MODELS:
-        return _LOADED_MODELS[model_name]
-
-    config = MODEL_CONFIG[model_name]
-
-    model_path = MODELS_DIR / config["file"]
-
-    if not model_path.exists():
-        raise FileNotFoundError(
-            f"No se encontró el modelo: {model_path}"
-        )
-
-    print(
-        f"Cargando {config['architecture']} "
-        f"desde {model_path}..."
-    )
-
-    learner = load_learner(
-        model_path,
-        cpu=True
-    )
-
-    _LOADED_MODELS[model_name] = learner
-
-    print(
-        f"{config['architecture']} "
-        f"cargado correctamente."
-    )
-
-    return learner
+    return classifier.load()
 
 
 # ============================================================
@@ -136,65 +67,22 @@ def get_model(model_name="resnet34"):
 
 def predict(image_path, model_name="resnet34"):
     """
-    Ejecuta una predicción sobre una imagen.
+    Ejecuta una predicción utilizando la estructura POO.
     """
 
-    learner = get_model(model_name)
-
-    config = MODEL_CONFIG[model_name]
-
-    start_time = time.perf_counter()
-
-    pred_class, pred_idx, probabilities = learner.predict(
-        image_path
+    return _MODEL_MANAGER.predict(
+        image_path,
+        model_name=model_name
     )
 
-    inference_time_ms = (
-        time.perf_counter() - start_time
-    ) * 1000
 
-    dog_probability = float(
-        probabilities[0].item()
-    ) * 100
+# ============================================================
+# COMPARACIÓN DE MODELOS
+# ============================================================
 
-    cat_probability = float(
-        probabilities[1].item()
-    ) * 100
+def compare_models(image_path):
+    """
+    Ejecuta la misma imagen con todos los modelos disponibles.
+    """
 
-    pred_value = pred_class
-
-    if isinstance(pred_value, str):
-        pred_value = (
-            pred_value.strip().lower() == "true"
-        )
-
-    prediction = (
-        "GATO"
-        if bool(pred_value)
-        else "PERRO"
-    )
-
-    confidence = float(
-        probabilities[int(pred_idx)].item()
-    ) * 100
-
-    return {
-        "model": model_name,
-        "architecture": config["architecture"],
-        "prediction": prediction,
-        "confidence": round(confidence, 2),
-        "probabilities": {
-            "PERRO": round(dog_probability, 2),
-            "GATO": round(cat_probability, 2),
-        },
-        "inference_time_ms": round(
-            inference_time_ms,
-            2
-        ),
-        "validation_accuracy": config[
-            "validation_accuracy"
-        ],
-        "validation_error_rate": config[
-            "validation_error_rate"
-        ],
-    }
+    return _MODEL_MANAGER.compare_models(image_path)
